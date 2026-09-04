@@ -1,0 +1,1387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>pypogs — Python Portable Optical Ground Station</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+:root{--bg:#1a1a1a;--panel:#252526;--panel2:#2d2d30;--border:#3f3f46;--text:#ccc;--dim:#888;--hi:#fff;--cyan:#00e0ff;--green:#0f0;--amber:#fc0;--red:#f33;--purple:#b26ff0;--mono:'JetBrains Mono',monospace;}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{width:100%;height:100%;overflow:hidden;background:#111;color:var(--text);font-family:var(--mono);font-size:11px;}
+
+/* ===== FLOATING WINDOWS ===== */
+.fw{position:absolute;z-index:100;background:var(--panel);border:1px solid var(--border);box-shadow:0 2px 12px rgba(0,0,0,.6);display:flex;flex-direction:column;min-width:140px;}
+.fw .tb{padding:3px 7px;background:var(--panel2);border-bottom:1px solid var(--border);font-size:10px;color:var(--dim);cursor:grab;user-select:none;display:flex;justify-content:space-between;align-items:center;}
+.fw .tb:active{cursor:grabbing;}
+.fw .tb .x{cursor:pointer;font-size:13px;line-height:1;color:#666;}
+.fw .tb .x:hover{color:var(--red);}
+.fw .bd{padding:6px 8px;overflow-y:auto;}
+
+/* Shared */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:2px 6px;font-size:10px;}
+.g2 .l{color:var(--dim);text-align:right;}.g2 .v{color:var(--hi);}
+.inp{width:100%;background:#1e1e1e;color:var(--hi);border:1px solid #555;padding:2px 4px;font-family:var(--mono);font-size:10px;outline:none;}
+.inp:focus{border-color:var(--cyan);}
+.bt{width:100%;padding:4px;margin-top:3px;background:#333;color:var(--text);border:1px solid #555;font-family:var(--mono);font-size:10px;cursor:pointer;text-align:center;}
+.bt:hover{border-color:var(--cyan);color:var(--cyan);}
+.bt:active{background:#444;}
+hr{border:none;border-top:1px solid #444;margin:6px 0;}
+select.inp{padding:3px;}
+
+/* Camera feed */
+#cam{display:block;background:#000;image-rendering:pixelated;}
+.cam-wrap{position:relative;}
+.cam-ov{position:absolute;inset:0;pointer-events:none;}
+/* Blue crosshair */
+.xh{position:absolute;top:50%;left:50%;width:100%;height:100%;transform:translate(-50%,-50%);}
+.xh::before,.xh::after{content:'';position:absolute;background:rgba(0,80,255,.7);}
+.xh::before{top:50%;left:0;right:0;height:2px;transform:translateY(-1px);}
+.xh::after{left:50%;top:0;bottom:0;width:2px;transform:translateX(-1px);}
+.xh-gap{position:absolute;top:50%;left:50%;width:12px;height:12px;background:#000;transform:translate(-50%,-50%);z-index:1;}
+/* Tracking circle */
+.trk-circle{position:absolute;width:70px;height:70px;border:2px solid var(--green);border-radius:50%;top:50%;left:50%;transform:translate(-50%,-50%);box-shadow:0 0 8px rgba(0,255,0,.4),inset 0 0 8px rgba(0,255,0,.15);transition:left .05s linear,top .05s linear;}
+.trk-dot{position:absolute;width:4px;height:4px;background:var(--green);border-radius:50%;top:50%;left:50%;transform:translate(-50%,-50%);}
+
+/* Bottom bar */
+.bb{position:absolute;bottom:0;left:0;right:0;height:28px;background:var(--panel);border-top:1px solid var(--border);display:flex;align-items:center;padding:0 10px;gap:15px;z-index:200;font-size:10px;}
+.bb .sep{width:1px;height:16px;background:#555;}
+
+/* Console */
+.con{font-size:9px;color:#777;height:100px;overflow-y:auto;background:#111;border:1px solid #333;padding:3px 5px;}
+.con .ok{color:var(--green);}.con .w{color:var(--amber);}.con .e{color:var(--red);}.con .i{color:#888;}
+
+/* Slider */
+.sr{display:flex;align-items:center;gap:5px;margin-bottom:2px;}
+.sr .sl{width:100px;font-size:9px;color:var(--dim);}
+.sr .sv{width:24px;font-size:9px;color:var(--hi);text-align:right;}
+input[type=range]{-webkit-appearance:none;flex:1;height:2px;background:#555;outline:none;}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:10px;border-radius:50%;background:var(--cyan);cursor:pointer;box-shadow:0 0 4px var(--cyan);}
+
+/* Sparkline */
+.spk svg{width:100%;height:28px;display:block;}
+
+/* ===== 3D IMMERSIVE VIEW ===== */
+.vr-overlay{position:fixed;inset:0;z-index:600;pointer-events:none;display:none;font-family:var(--mono);}
+.vr-overlay.active{display:block;}
+.vr-overlay>*{pointer-events:auto;}
+
+/* Targeting reticle */
+.vr-reticle{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:80px;height:80px;pointer-events:none;}
+.reticle-ring{width:100%;height:100%;border:2px solid rgba(0,224,255,0.4);border-radius:50%;position:relative;transition:border-color 0.3s,box-shadow 0.3s;}
+.reticle-ring::before,.reticle-ring::after{content:'';position:absolute;background:rgba(0,224,255,0.6);}
+.reticle-ring::before{width:2px;height:14px;top:-18px;left:50%;transform:translateX(-50%);}
+.reticle-ring::after{width:2px;height:14px;bottom:-18px;left:50%;transform:translateX(-50%);}
+.reticle-h::before,.reticle-h::after{content:'';position:absolute;background:rgba(0,224,255,0.6);}
+.reticle-h::before{height:2px;width:14px;left:-18px;top:50%;transform:translateY(-50%);}
+.reticle-h::after{height:2px;width:14px;right:-18px;top:50%;transform:translateY(-50%);}
+.reticle-dot{position:absolute;width:4px;height:4px;background:var(--cyan);border-radius:50%;top:50%;left:50%;transform:translate(-50%,-50%);}
+.reticle-locked .reticle-ring{border-color:var(--green);box-shadow:0 0 25px rgba(0,255,0,0.4),inset 0 0 15px rgba(0,255,0,0.1);}
+.reticle-locked .reticle-ring::before,.reticle-locked .reticle-ring::after,
+.reticle-locked .reticle-h::before,.reticle-locked .reticle-h::after{background:rgba(0,255,0,0.7);}
+.reticle-locked .reticle-dot{background:var(--green);}
+
+/* Satellite info card */
+.sat-info-card{position:absolute;top:20px;right:20px;background:rgba(20,20,25,0.92);border:1px solid var(--cyan);padding:14px 18px;font-size:11px;min-width:260px;display:none;backdrop-filter:blur(6px);}
+.sat-info-card .sat-name{color:var(--cyan);font-size:14px;font-weight:700;margin-bottom:6px;letter-spacing:1px;}
+.sat-info-card .sat-detail-row{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.05);}
+.sat-info-card .sat-detail-row .sdl{color:var(--dim);}
+.sat-info-card .sat-detail-row .sdv{color:var(--hi);}
+
+/* Message type panel */
+.msg-panel{position:absolute;bottom:100px;left:50%;transform:translateX(-50%);background:rgba(20,20,25,0.92);border:1px solid var(--border);padding:12px 16px;display:none;flex-direction:column;align-items:center;gap:8px;backdrop-filter:blur(6px);}
+.msg-panel .msg-title{font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:4px;}
+.msg-btn-row{display:flex;gap:6px;}
+.msg-btn{padding:8px 18px;background:#222;border:1px solid #555;color:var(--text);font-family:var(--mono);font-size:11px;cursor:pointer;transition:all 0.2s;}
+.msg-btn:hover{border-color:var(--cyan);color:var(--cyan);background:#1a2a3a;}
+.msg-btn.active{border-color:var(--green);color:var(--green);background:rgba(0,255,0,0.08);box-shadow:0 0 12px rgba(0,255,0,0.15);}
+
+/* Send button */
+.btn-send-signal{position:absolute;bottom:50px;left:50%;transform:translateX(-50%);padding:10px 36px;background:rgba(0,80,0,0.25);border:2px solid var(--green);color:var(--green);font-family:var(--mono);font-size:13px;cursor:pointer;text-transform:uppercase;letter-spacing:3px;display:none;transition:all 0.2s;}
+.btn-send-signal:hover{background:rgba(0,255,0,0.15);box-shadow:0 0 30px rgba(0,255,0,0.3);text-shadow:0 0 10px rgba(0,255,0,0.6);}
+
+/* Link status */
+.link-status{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;display:none;pointer-events:none;}
+.link-text{font-size:28px;color:var(--green);font-weight:700;text-shadow:0 0 40px rgba(0,255,0,0.8),0 0 80px rgba(0,255,0,0.4);animation:linkPulse 1s ease-out;}
+.link-metrics{font-size:11px;color:var(--dim);margin-top:10px;letter-spacing:1px;}
+
+/* Exit 3D button */
+.btn-exit-3d{position:absolute;top:15px;left:15px;padding:6px 16px;background:rgba(30,30,30,0.9);border:1px solid #666;color:var(--text);font-family:var(--mono);font-size:11px;cursor:pointer;backdrop-filter:blur(4px);z-index:10;}
+.btn-exit-3d:hover{border-color:var(--red);color:var(--red);}
+
+/* 3D button in bottom bar */
+.btn-3d-view{padding:3px 14px;background:rgba(0,80,180,0.25);border:1px solid var(--cyan);color:var(--cyan);font-family:var(--mono);font-size:10px;cursor:pointer;margin-left:10px;transition:all 0.2s;}
+.btn-3d-view:hover{background:rgba(0,200,255,0.15);box-shadow:0 0 12px rgba(0,224,255,0.3);}
+
+/* Instructions overlay */
+.vr-instructions{position:absolute;bottom:140px;left:50%;transform:translateX(-50%);color:var(--dim);font-size:10px;text-align:center;pointer-events:none;opacity:0.7;line-height:1.6;}
+
+/* Animations */
+@keyframes linkPulse{0%{opacity:0;transform:translate(-50%,-50%) scale(0.7);}50%{opacity:1;transform:translate(-50%,-50%) scale(1.05);}100%{opacity:1;transform:translate(-50%,-50%) scale(1);}}
+@keyframes satPulse{0%,100%{opacity:0.7;}50%{opacity:1;}}
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+
+<!-- ======= FLOATING WINDOWS ======= -->
+
+<!-- W1: Hardware & Control (LEFT) -->
+<div class="fw" id="w1" style="left:5px;top:5px;width:220px;">
+<div class="tb">pypogs — Control Panel<span class="x" onclick="this.closest('.fw').style.display='none'">×</span></div>
+<div class="bd">
+<div style="font-size:9px;color:var(--cyan);margin-bottom:4px;">HARDWARE SETUP</div>
+<div class="g2" style="margin-bottom:4px;">
+<div class="l">Mount:</div><div class="v">ASCOM</div>
+<div class="l">Coarse Cam:</div><div class="v">ASI2_1</div>
+<div class="l">Fine Cam:</div><div class="v">None</div>
+</div>
+<div style="display:flex;gap:3px;"><button class="bt" style="flex:1" id="btn-init">Initialize All</button><button class="bt" style="flex:1">Deinitialize</button></div>
+<hr>
+<div style="font-size:9px;color:var(--cyan);margin-bottom:4px;">MANUAL CONTROL</div>
+<div class="g2" style="margin-bottom:3px;">
+<div class="l">Alt (°):</div><input class="inp" value="61.31">
+<div class="l">Azi (°):</div><input class="inp" value="-177.56">
+</div>
+<div style="display:flex;gap:3px;"><button class="bt" style="flex:1" id="btn-send">Send</button><button class="bt" style="flex:1">Stop</button></div>
+<button class="bt">Start sidereal tracking</button>
+<hr>
+<div style="font-size:9px;color:var(--cyan);margin-bottom:4px;">LOCATION AND ALIGNMENT</div>
+<div class="g2">
+<div class="l">Lat:</div><input class="inp" value="N24.26°">
+<div class="l">Lon:</div><input class="inp" value="E81.16°">
+</div>
+<div style="display:flex;gap:3px;margin-top:3px;"><button class="bt" style="flex:1">Set Location</button><button class="bt" style="flex:1">Set Alignment</button></div>
+<hr>
+<div style="font-size:9px;color:var(--cyan);margin-bottom:4px;">TARGET</div>
+<select class="inp" style="width:100%;margin-bottom:3px;" id="sel-sat">
+<option>Source: TLE #25544</option>
+<option>Source: TLE #53239</option>
+<option>Source: TLE #40269</option>
+</select>
+<div class="g2">
+<div class="l">No start time</div><div class="v"></div>
+<div class="l">End time:</div><div class="v" id="end-time">—</div>
+</div>
+<div style="display:flex;gap:3px;margin-top:3px;"><button class="bt" style="flex:1">Set Manual</button><button class="bt" style="flex:1">Set from File</button></div>
+<button class="bt" id="btn-goto">Go To Target</button>
+<hr>
+<div style="font-size:9px;color:var(--cyan);margin-bottom:4px;">CONTROLLER PROPERTIES</div>
+<div style="display:flex;gap:3px;margin-bottom:3px;"><button class="bt" style="flex:1">Feedback</button><button class="bt" style="flex:1">Fine Tracker</button></div>
+<div style="display:flex;gap:3px;margin-bottom:3px;"><button class="bt" style="flex:1">Coarse Tracker</button></div>
+<div style="display:flex;gap:6px;margin-bottom:4px;">
+<label style="color:var(--dim);"><input type="radio" name="tm" checked style="accent-color:var(--cyan);"> CCL</label>
+<label style="color:var(--dim);"><input type="radio" name="tm" style="accent-color:var(--cyan);"> Coarse</label>
+<label style="color:var(--dim);"><input type="radio" name="tm" style="accent-color:var(--cyan);"> FCL</label>
+</div>
+<button class="bt" id="btn-trk" style="background:#003300;border-color:var(--green);color:var(--green);">▶ Start Tracking</button>
+<button class="bt">Stop Tracking</button>
+</div>
+</div>
+
+<!-- W2: Live Status (LEFT BOTTOM) -->
+<div class="fw" id="w2" style="left:5px;top:550px;width:220px;">
+<div class="tb">Live Status<span class="x" onclick="this.closest('.fw').style.display='none'">×</span></div>
+<div class="bd"><div class="g2" id="status-grid"></div></div>
+</div>
+
+<!-- W3: Coarse Tracker Properties (RIGHT) -->
+<div class="fw" id="w3" style="right:5px;top:5px;width:250px;">
+<div class="tb">Coarse Tracker<span class="x" onclick="this.closest('.fw').style.display='none'">×</span></div>
+<div class="bd">
+<div class="g2" style="grid-template-columns:140px 1fr;">
+<div class="l">successes_to_track</div><input class="inp" value="1">
+<div class="l">fails_to_drop</div><input class="inp" value="10">
+<div class="l">failure_sd_penalty</div><input class="inp" value="25.0">
+<div class="l">max_search_radius</div><input class="inp" value="400.0">
+<div class="l">min_search_radius</div><input class="inp" value="4.0">
+<div class="l">smoothing_parameter</div><input class="inp" value="4.0">
+<div class="l">position_sigma</div><input class="inp" value="5.0">
+<div class="l">sum_sigma</div><input class="inp" value="5.0">
+<div class="l">sum_max_sd</div><input class="inp" value="None">
+<div class="l">sum_min_sd</div><input class="inp" value="None">
+<div class="l">area_sigma</div><input class="inp" value="None">
+<div class="l">binary_open</div><input class="inp" value="False">
+<div class="l">spot_min_sum</div><input class="inp" value="100.0">
+<div class="l">spot_max_sum</div><input class="inp" value="None">
+<div class="l">spot_min_area</div><input class="inp" value="3">
+<div class="l">spot_max_area</div><input class="inp" value="None">
+<div class="l">image_sigma_th</div><input class="inp" value="1.5">
+<div class="l">crop_padding</div><input class="inp" value="18">
+</div>
+<button class="bt" style="margin-top:5px;">Set</button>
+</div>
+</div>
+
+<!-- W4: Feedback Properties (RIGHT LOWER) -->
+<div class="fw" id="w4" style="right:5px;top:400px;width:250px;">
+<div class="tb">Feedback Properties<span class="x" onclick="this.closest('.fw').style.display='none'">×</span></div>
+<div class="bd">
+<div class="g2" style="grid-template-columns:150px 1fr;">
+<div class="l">CTFSP_auto_update</div><input class="inp" value="True">
+<div class="l">CCL_speed</div><input class="inp" value="360.0">
+<div class="l">CCL_transition_th</div><input class="inp" value="180.0">
+<div class="l">CTFSP_disable_integral</div><input class="inp" value="False">
+<div class="l">integral_max_subtract</div><input class="inp" value="360.0">
+<div class="l">FCL_P</div><input class="inp" value="1.0">
+<div class="l">FCL_transition_th</div><input class="inp" value="100.0">
+<div class="l">CTFSP_gain</div><input class="inp" value="1.0">
+<div class="l">CTFSP_max_radius</div><input class="inp" value="180.0">
+<div class="l">CTFSP_transition_th</div><input class="inp" value="1.0">
+<div class="l">CTFSP_auto_update_gain</div><input class="inp" value="True">
+</div>
+<button class="bt" style="margin-top:5px;">Set</button>
+</div>
+</div>
+
+<!-- W5: Console Log (BOTTOM) -->
+<div class="fw" id="w5" style="left:230px;bottom:33px;width:400px;">
+<div class="tb">Console<span class="x" onclick="this.closest('.fw').style.display='none'">×</span></div>
+<div class="bd" style="padding:0;"><div class="con" id="con"></div></div>
+</div>
+
+<!-- W6: Disturbances (BOTTOM CENTER) -->
+<div class="fw" id="w6" style="left:640px;bottom:33px;width:280px;">
+<div class="tb">Disturbance Engine<span class="x" onclick="this.closest('.fw').style.display='none'">×</span></div>
+<div class="bd">
+<div class="sr"><div class="sl">Scintillation</div><input type="range" id="sl-sc" min="0" max="100" value="8"><div class="sv" id="sv-sc">8</div></div>
+<div class="sr"><div class="sl">Wavefront Dist.</div><input type="range" id="sl-wv" min="0" max="100" value="15"><div class="sv" id="sv-wv">15</div></div>
+<div class="sr"><div class="sl">Platform Jitter</div><input type="range" id="sl-vb" min="0" max="100" value="10"><div class="sv" id="sv-vb">10</div></div>
+</div>
+</div>
+
+<!-- W7: RMSE + CNN (BOTTOM RIGHT) -->
+<div class="fw" id="w7" style="right:5px;bottom:33px;width:250px;">
+<div class="tb">Tracking Metrics<span class="x" onclick="this.closest('.fw').style.display='none'">×</span></div>
+<div class="bd">
+<div style="font-size:9px;color:var(--dim);margin-bottom:2px;">TRACKING ERROR RMSE (px)</div>
+<div class="spk"><svg viewBox="0 0 230 28" preserveAspectRatio="none"><polyline id="spk" fill="none" stroke="var(--cyan)" stroke-width="1.5" points="0,14 230,14" opacity=".8"/></svg></div>
+<hr>
+<div style="font-size:9px;color:var(--dim);margin-bottom:2px;">CNN FALLBACK CONFIDENCE</div>
+<div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
+<svg width="45" height="45" viewBox="0 0 45 45" style="transform:rotate(-90deg);"><circle cx="22.5" cy="22.5" r="19" fill="none" stroke="#333" stroke-width="4"/><circle id="ai-ring" cx="22.5" cy="22.5" r="19" fill="none" stroke="var(--purple)" stroke-width="4" stroke-dasharray="119" stroke-dashoffset="12" style="filter:drop-shadow(0 0 3px var(--purple));transition:stroke-dashoffset .1s;"/></svg>
+<div><div style="color:var(--purple);font-size:16px;font-weight:700;" id="ai-v">95%</div><div style="font-size:9px;color:var(--dim);">Latency: <span id="ai-l">4.2</span>ms</div></div>
+</div>
+</div>
+</div>
+
+<!-- ===== CENTER: CAMERA FEED (canvas, always visible) ===== -->
+<div class="cam-wrap" style="position:absolute;left:230px;top:5px;right:260px;bottom:33px;z-index:50;">
+<canvas id="cam" style="width:100%;height:100%;"></canvas>
+<div class="cam-ov">
+<div class="xh"><div class="xh-gap"></div></div>
+<div class="trk-circle" id="tc"><div class="trk-dot"></div></div>
+</div>
+<!-- Camera controls bar -->
+<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(30,30,30,.85);padding:4px 8px;display:flex;align-items:center;gap:8px;font-size:10px;border-top:1px solid #444;">
+<span style="color:var(--dim);">Camera (Tracker)</span>
+<label style="color:var(--dim);"><input type="radio" name="cc"> None</label>
+<label style="color:var(--dim);"><input type="radio" name="cc"> Star (OL)</label>
+<label style="color:var(--dim);"><input type="radio" name="cc" checked> Coarse (CCL)</label>
+<label style="color:var(--dim);"><input type="radio" name="cc"> Fine (FCL)</label>
+<span style="margin-left:auto;color:var(--dim);">Max Value: <span style="color:var(--hi);" id="max-val">33240</span></span>
+<label style="color:var(--dim);"><input type="checkbox" checked style="accent-color:var(--cyan);"> Auto</label>
+</div>
+<!-- Bottom action bar -->
+<div style="position:absolute;bottom:28px;left:0;right:0;background:rgba(30,30,30,.85);padding:3px 8px;display:flex;align-items:center;gap:6px;font-size:9px;border-top:1px solid #444;">
+<label style="color:var(--dim);"><input type="checkbox" style="accent-color:var(--cyan);"> Manual Acquire</label>
+<button class="bt" style="width:auto;margin:0;padding:2px 8px;">Clear Track</button>
+<label style="color:var(--dim);"><input type="checkbox" checked style="accent-color:var(--cyan);"> Add Offset</label>
+<button class="bt" style="width:auto;margin:0;padding:2px 8px;">Clear Offset</button>
+<button class="bt" style="width:auto;margin:0;padding:2px 8px;">Intercam Alignment</button>
+</div>
+</div>
+
+<!-- ===== 3D IMMERSIVE OVERLAY ===== -->
+<div class="vr-overlay" id="vr-overlay">
+  <button class="btn-exit-3d" id="btn-exit-3d">✕ EXIT 3D VIEW</button>
+  <div class="vr-reticle" id="vr-reticle">
+    <div class="reticle-ring"><div class="reticle-h"></div><div class="reticle-dot"></div></div>
+  </div>
+  <div class="sat-info-card" id="sat-info">
+    <div class="sat-name" id="sat-name">—</div>
+    <div class="sat-detail-row"><span class="sdl">NORAD ID</span><span class="sdv" id="si-id">—</span></div>
+    <div class="sat-detail-row"><span class="sdl">Altitude</span><span class="sdv" id="si-alt">—</span></div>
+    <div class="sat-detail-row"><span class="sdl">Range</span><span class="sdv" id="si-range">—</span></div>
+    <div class="sat-detail-row"><span class="sdl">Ang. Velocity</span><span class="sdv" id="si-angvel">—</span></div>
+    <div class="sat-detail-row"><span class="sdl">Elevation</span><span class="sdv" id="si-elev">—</span></div>
+    <div class="sat-detail-row"><span class="sdl">Azimuth</span><span class="sdv" id="si-azi">—</span></div>
+  </div>
+  <div class="msg-panel" id="msg-panel">
+    <div class="msg-title">OPTICAL MESSAGE TYPE</div>
+    <div class="msg-btn-row">
+      <button class="msg-btn active" data-type="beacon" id="mb-beacon">⚡ BEACON</button>
+      <button class="msg-btn" data-type="data" id="mb-data">📡 DATA BURST</button>
+      <button class="msg-btn" data-type="handshake" id="mb-handshake">🤝 HANDSHAKE</button>
+    </div>
+  </div>
+  <button class="btn-send-signal" id="btn-fire">▲ SEND OPTICAL SIGNAL</button>
+  <div class="link-status" id="link-status">
+    <div class="link-text">⚡ LINK ESTABLISHED</div>
+    <div class="link-metrics" id="link-metrics">BER: 1.2×10⁻⁹ · SNR: 24.3 dB · Margin: +6.2 dB</div>
+  </div>
+  <div class="vr-instructions" id="vr-instructions">DRAG to look around · CLICK a satellite dot to target · Choose message type · SEND</div>
+</div>
+
+<!-- BOTTOM STATUS BAR -->
+<div class="bb">
+<span style="color:var(--cyan);">pypogs</span>
+<div class="sep"></div>
+<span id="bb-status" style="color:var(--green);">● TRACKING</span>
+<div class="sep"></div>
+<span>TLE #25544 ISS (ZARYA)</span>
+<div class="sep"></div>
+<span id="bb-utc">00:00:00 UTC</span>
+<div class="sep"></div>
+<span>RMSE: <span id="bb-rmse" style="color:var(--hi);">0.0</span> px</span>
+<div class="sep"></div>
+<span>FPS: <span id="bb-fps" style="color:var(--hi);">2.23</span></span>
+<button class="btn-3d-view" id="btn-3d-view">🛰 3D OPTICAL LINK VIEW</button>
+<span style="margin-left:auto;color:var(--dim);">OptiLock // ISRO SIH26169</span>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
+
+// ========== DRAGGABLE ==========
+document.querySelectorAll('.fw').forEach(w=>{
+    const b=w.querySelector('.tb');
+    b.addEventListener('mousedown',e=>{
+        if(e.target.classList.contains('x'))return;
+        const ox=e.clientX-w.offsetLeft, oy=e.clientY-w.offsetTop;
+        function mv(ev){w.style.left=(ev.clientX-ox)+'px';w.style.top=(ev.clientY-oy)+'px';w.style.right='auto';w.style.bottom='auto';}
+        function up(){document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);}
+        document.addEventListener('mousemove',mv);
+        document.addEventListener('mouseup',up);
+        // Bring to front
+        document.querySelectorAll('.fw').forEach(x=>x.style.zIndex=100);
+        w.style.zIndex=101;
+    });
+});
+
+// ========== SLIDER LABELS ==========
+['sc','wv','vb'].forEach(id=>{
+    document.getElementById('sl-'+id).addEventListener('input',e=>{document.getElementById('sv-'+id).innerText=e.target.value;});
+});
+
+// ========== STATUS GRID ==========
+const sKeys=['alt','azi','alt_rate','azi_rate','mode','fb_err_alt','fb_err_azi','int_alt','int_azi','ct_has_track','ct_track_alt','ct_track_azi','ct_err_alt','ct_err_azi','ct_rmse','ct_mean_alt','ct_mean_azi','ct_search_x','ct_search_y','ft_has_track','ft_rmse'];
+const sEls={};
+const sg=document.getElementById('status-grid');
+sKeys.forEach(k=>{
+    const l=document.createElement('div');l.className='l';l.innerText=k+':';
+    const v=document.createElement('div');v.className='v';v.innerText='0.00';
+    sg.appendChild(l);sg.appendChild(v);sEls[k]=v;
+});
+
+// ========== CONSOLE ==========
+function log(cls,msg){
+    const c=document.getElementById('con');
+    const ts=new Date().toISOString().substring(11,19);
+    c.innerHTML+=`<div class="${cls}">[${ts}] ${msg}</div>`;
+    c.scrollTop=c.scrollHeight;
+}
+
+// ========== BUTTONS ==========
+let isTracking=true;
+document.getElementById('btn-trk').addEventListener('click',()=>{
+    isTracking=!isTracking;
+    log(isTracking?'ok':'w',isTracking?'Tracking ENGAGED — closed-loop active.':'Tracking STOPPED.');
+});
+document.getElementById('btn-send').addEventListener('click',()=>{
+    log('ok','Slewing to manual position alt=61.31° azi=-177.56°');
+});
+document.getElementById('btn-goto').addEventListener('click',()=>{
+    log('i','Go To Target — computing slew path...');
+    setTimeout(()=>log('ok','On target. Awaiting acquisition.'),600);
+});
+document.getElementById('btn-init').addEventListener('click',()=>{
+    log('ok','All hardware initialized successfully.');
+});
+
+// ========== CAMERA FEED (simulated sensor) ==========
+const cam=document.getElementById('cam');
+const ctx=cam.getContext('2d');
+let W=0,H=0;
+function resizeCam(){
+    const r=cam.parentElement.getBoundingClientRect();
+    W=cam.width=Math.floor(r.width);
+    H=cam.height=Math.floor(r.height)-56; // minus control bars
+}
+resizeCam();
+window.addEventListener('resize',resizeCam);
+
+// Pre-generate star field for the sensor
+const starCount=200;
+const starX=new Float32Array(starCount);
+const starY=new Float32Array(starCount);
+const starB=new Float32Array(starCount);
+for(let i=0;i<starCount;i++){starX[i]=Math.random();starY[i]=Math.random();starB[i]=25+Math.random()*70;}
+
+// Satellite position state (simulated orbit drift across sensor)
+let satX=0.5, satY=0.5;
+let satVx=0.0004, satVy=0.0002;
+let trkX=0.5, trkY=0.5; // Tracker estimated position (lags behind)
+let time=0;
+const sparkData=Array(23).fill(0);
+
+function drawFrame(){
+    time+=0.016;
+    const scint=document.getElementById('sl-sc').value/100;
+    const wave=document.getElementById('sl-wv').value/100;
+    const vib=document.getElementById('sl-vb').value/100;
+
+    // 1. Satellite moves across field (simulates telescope tracking drift)
+    if(isTracking){
+        // Closed loop: satellite stays near center, small wander
+        satX = 0.5 + Math.sin(time*0.7)*0.03*(1+wave*3) + Math.sin(time*3.1)*0.005*(1+vib*5);
+        satY = 0.5 + Math.cos(time*0.5)*0.02*(1+wave*3) + Math.cos(time*2.7)*0.005*(1+vib*5);
+    } else {
+        // Open loop: satellite drifts away
+        satX += satVx + Math.sin(time)*0.0003;
+        satY += satVy + Math.cos(time*0.7)*0.0002;
+        if(satX>0.95||satX<0.05){satVx*=-1;}
+        if(satY>0.95||satY<0.05){satVy*=-1;}
+    }
+
+    // 2. Tracker follows with lag (PID-like)
+    const gain = isTracking ? 0.08 : 0.02;
+    trkX += (satX - trkX) * gain;
+    trkY += (satY - trkY) * gain;
+
+    // 3. Render dark sensor noise
+    const imgData=ctx.createImageData(W,H);
+    const d=imgData.data;
+    for(let i=0;i<d.length;i+=4){
+        const nv = Math.random()*(5+scint*50);
+        d[i]=d[i+1]=d[i+2]=nv; d[i+3]=255;
+    }
+
+    // 4. Stars (they drift if tracking, simulating panning telescope)
+    const panX = isTracking ? time*0.01 : 0;
+    const panY = isTracking ? time*0.005 : 0;
+    for(let i=0;i<starCount;i++){
+        let sx = ((starX[i]+panX)%1)*W;
+        let sy = ((starY[i]+panY)%1)*H;
+        const ix=Math.round(sx), iy=Math.round(sy);
+        if(ix>=1&&ix<W-1&&iy>=1&&iy<H-1){
+            // Star with slight bloom
+            for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+                const idx=((iy+dy)*W+(ix+dx))*4;
+                const b=starB[i]*(dx===0&&dy===0?1:0.3)*(0.7+Math.random()*0.3);
+                d[idx]=d[idx+1]=d[idx+2]=Math.min(255,d[idx]+b);
+            }
+        }
+    }
+
+    // 5. Satellite (bright blob)
+    const spx=Math.round(satX*W), spy=Math.round(satY*H);
+    for(let dy=-4;dy<=4;dy++) for(let dx=-4;dx<=4;dx++){
+        const px=spx+dx,py=spy+dy;
+        if(px>=0&&px<W&&py>=0&&py<H){
+            const dist=Math.sqrt(dx*dx+dy*dy);
+            const bright=Math.max(0, 255-dist*40)*(0.85+Math.random()*0.15);
+            // Scintillation makes it flicker
+            const flick = 1 - scint*Math.random()*0.6;
+            const idx=(py*W+px)*4;
+            const val=bright*flick;
+            d[idx]=d[idx+1]=d[idx+2]=Math.min(255,d[idx]+val);
+        }
+    }
+
+    ctx.putImageData(imgData,0,0);
+
+    // 6. Move tracking circle overlay to follow satellite
+    const tc=document.getElementById('tc');
+    const camRect=cam.parentElement.getBoundingClientRect();
+    tc.style.left = (trkX*100)+'%';
+    tc.style.top = (trkY*(H/(H+56))*100)+'%';
+
+    // Tracking circle color
+    const errPx = Math.sqrt((satX-trkX)**2+(satY-trkY)**2)*W;
+    if(errPx<15){
+        tc.style.borderColor='var(--green)';tc.style.boxShadow='0 0 8px rgba(0,255,0,.4),inset 0 0 8px rgba(0,255,0,.15)';
+        tc.querySelector('.trk-dot').style.background='var(--green)';
+    } else {
+        tc.style.borderColor='var(--red)';tc.style.boxShadow='0 0 8px rgba(255,0,0,.4)';
+        tc.querySelector('.trk-dot').style.background='var(--red)';
+    }
+
+    // 7. Update all telemetry
+    updateTelem(errPx, scint, wave, vib);
+
+    requestAnimationFrame(drawFrame);
+}
+
+// ========== TELEMETRY ==========
+let telemTick=0;
+function updateTelem(errPx, scint, wave, vib){
+    telemTick++;
+    if(telemTick%3!==0) return; // ~20Hz
+
+    const n=()=>(Math.random()-.5)*0.1;
+    const alt=61.31+Math.sin(time*0.1)*2+n();
+    const azi=-177.56+time*0.5+n();
+
+    sEls['alt'].innerText=alt.toFixed(2);
+    sEls['azi'].innerText=azi.toFixed(2);
+    sEls['alt_rate'].innerText=(-0.02+n()*0.5).toFixed(2);
+    sEls['azi_rate'].innerText=(0.15+n()*0.3).toFixed(2);
+    sEls['mode'].innerText=isTracking?'CCL':'OL';
+    sEls['fb_err_alt'].innerText=(errPx*Math.sin(time)*0.5).toFixed(2);
+    sEls['fb_err_azi'].innerText=(errPx*Math.cos(time)*0.5).toFixed(2);
+    sEls['int_alt'].innerText=(n()*20).toFixed(1);
+    sEls['int_azi'].innerText=(n()*20).toFixed(1);
+    sEls['ct_has_track'].innerText=isTracking?(errPx<20?'True':'False'):'False';
+    sEls['ct_track_alt'].innerText=(satY*1000).toFixed(1);
+    sEls['ct_track_azi'].innerText=(satX*1000).toFixed(1);
+    sEls['ct_err_alt'].innerText=(errPx*Math.sin(time)).toFixed(2);
+    sEls['ct_err_azi'].innerText=(errPx*Math.cos(time)).toFixed(2);
+    sEls['ct_rmse'].innerText=errPx.toFixed(2);
+    sEls['ct_mean_alt'].innerText=(satY*1000+n()*5).toFixed(1);
+    sEls['ct_mean_azi'].innerText=(satX*1000+n()*5).toFixed(1);
+    sEls['ct_search_x'].innerText=(satX*W+n()*10).toFixed(0);
+    sEls['ct_search_y'].innerText=(satY*H+n()*10).toFixed(0);
+    sEls['ft_has_track'].innerText=isTracking?'True':'False';
+    sEls['ft_rmse'].innerText=(errPx*0.15).toFixed(2);
+
+    // Sparkline
+    sparkData.shift(); sparkData.push(errPx);
+    const mx=Math.max(10,...sparkData);
+    document.getElementById('spk').setAttribute('points',sparkData.map((v,i)=>`${i*(230/22)},${26-(v/mx)*22}`).join(' '));
+
+    // CNN
+    let conf=98-errPx*1.2-scint*15;
+    conf=Math.max(10,Math.min(99.5,conf+Math.random()*2));
+    document.getElementById('ai-v').innerText=conf.toFixed(0)+'%';
+    document.getElementById('ai-ring').style.strokeDashoffset=119-(119*conf/100);
+    document.getElementById('ai-l').innerText=(3+Math.random()*2).toFixed(1);
+
+    // Max pixel value
+    document.getElementById('max-val').innerText=Math.round(30000+Math.random()*5000);
+
+    // Bottom bar
+    document.getElementById('bb-rmse').innerText=errPx.toFixed(1);
+    document.getElementById('bb-fps').innerText=(2.2+Math.random()*0.1).toFixed(2);
+    const bbs=document.getElementById('bb-status');
+    if(errPx<15&&isTracking){bbs.innerText='● TRACKING';bbs.style.color='var(--green)';}
+    else if(isTracking){bbs.innerText='● ACQUIRING';bbs.style.color='var(--amber)';}
+    else{bbs.innerText='○ IDLE';bbs.style.color='var(--dim)';}
+}
+
+// ========== BOOT ==========
+log('i','pypogs v3.2.1 starting...');
+log('ok','Mount driver loaded: ASCOM Simulator');
+log('ok','Coarse camera initialized: ASICamera2_1 (960×600, gain=100, exposure=500ms)');
+log('i','Setting coarse search position to: [-62.934, -70.195]');
+log('ok','Closed-loop tracking active. Searching for target...');
+setTimeout(()=>log('ok','Target acquired! ct_has_track=True'),1500);
+setTimeout(()=>log('ok','Locked. RMSE=3.21px. Link margin=+6.2dB'),2500);
+
+// Start render loop immediately
+requestAnimationFrame(drawFrame);
+
+// =====================================================================
+//  THREE.JS — IMMERSIVE OPTICAL GROUND STATION
+//  Ground-based perspective · 15 satellite constellation · Laser comms
+// =====================================================================
+
+const EARTH_RADIUS = 100;
+const CAM_HEIGHT = 1.6;
+
+// --- Satellite constellation data ---
+const SAT_DATA = [
+    { name:'ISS (ZARYA)',       id:25544, radius:130, tilt:0.12, raan:0.0,  phase0:0.0,  speed:0.10, col:[1,.95,.7] },
+    { name:'STARLINK-1007',     id:44713, radius:142, tilt:0.08, raan:0.9,  phase0:0.45, speed:0.09, col:[.85,.85,1] },
+    { name:'CARTOSAT-3',        id:44804, radius:135, tilt:0.25, raan:2.1,  phase0:1.0,  speed:0.11, col:[1,.8,.5] },
+    { name:'OCEANSAT-3',        id:53239, radius:128, tilt:0.30, raan:3.2,  phase0:1.6,  speed:0.12, col:[.5,.8,1] },
+    { name:'RESOURCESAT-2A',    id:41877, radius:133, tilt:0.22, raan:0.7,  phase0:2.1,  speed:0.105,col:[1,1,.6] },
+    { name:'IRNSS-1A (NavIC)',  id:39199, radius:165, tilt:0.05, raan:1.5,  phase0:2.7,  speed:0.04, col:[1,.5,.5] },
+    { name:'GSAT-30',           id:45026, radius:175, tilt:0.03, raan:0.2,  phase0:3.2,  speed:0.03, col:[.7,1,.7] },
+    { name:'RISAT-2BR1',        id:44857, radius:126, tilt:0.18, raan:4.1,  phase0:3.8,  speed:0.13, col:[1,.85,.6] },
+    { name:'ADITYA-L1',         id:57829, radius:180, tilt:0.04, raan:5.2,  phase0:4.3,  speed:0.025,col:[1,.65,.2] },
+    { name:'CHANDRAYAAN-3 PM',  id:57320, radius:170, tilt:0.06, raan:1.8,  phase0:4.8,  speed:0.035,col:[.6,.6,1] },
+    { name:'STARLINK-2456',     id:48102, radius:143, tilt:0.07, raan:3.5,  phase0:5.3,  speed:0.09, col:[.9,.9,1] },
+    { name:'COSMOS 2558',       id:53328, radius:138, tilt:0.20, raan:4.6,  phase0:5.8,  speed:0.11, col:[1,.4,.4] },
+    { name:'TIANHE (CSS)',       id:48274, radius:131, tilt:0.15, raan:5.6,  phase0:0.3,  speed:0.10, col:[1,.8,.4] },
+    { name:'HUBBLE (HST)',      id:20580, radius:137, tilt:0.10, raan:1.1,  phase0:1.3,  speed:0.105,col:[.75,.75,1] },
+    { name:'ENVISAT',           id:27386, radius:134, tilt:0.28, raan:3.0,  phase0:2.9,  speed:0.11, col:[.6,1,.6] },
+];
+
+// --- Procedural textures ---
+function makeGlowTexture(r,g,b) {
+    const c = document.createElement('canvas'); c.width=c.height=64;
+    const x = c.getContext('2d');
+    const grd = x.createRadialGradient(32,32,0,32,32,32);
+    grd.addColorStop(0,`rgba(${r},${g},${b},1)`);
+    grd.addColorStop(0.15,`rgba(${r},${g},${b},0.7)`);
+    grd.addColorStop(0.4,`rgba(${Math.floor(r*.6)},${Math.floor(g*.6)},${Math.floor(b*.6)},0.25)`);
+    grd.addColorStop(1,'rgba(0,0,0,0)');
+    x.fillStyle=grd; x.fillRect(0,0,64,64);
+    return new THREE.CanvasTexture(c);
+}
+
+function makeGroundTexture() {
+    const c = document.createElement('canvas'); c.width=c.height=512;
+    const x = c.getContext('2d');
+    // Base grass green
+    x.fillStyle='#1a3d1a'; x.fillRect(0,0,512,512);
+    // Grass variation — random patches of lighter/darker greens
+    for(let i=0;i<800;i++){
+        const px=Math.random()*512, py=Math.random()*512;
+        const sz=2+Math.random()*8;
+        const g=Math.floor(40+Math.random()*50);
+        const rb=Math.floor(15+Math.random()*20);
+        x.fillStyle=`rgb(${rb},${g},${rb-5})`;
+        x.fillRect(px,py,sz,sz*0.6);
+    }
+    // Dirt patches
+    for(let i=0;i<40;i++){
+        const px=Math.random()*512, py=Math.random()*512;
+        const sz=8+Math.random()*25;
+        x.fillStyle=`rgba(${60+Math.random()*30},${45+Math.random()*20},${20+Math.random()*15},0.5)`;
+        x.beginPath(); x.ellipse(px,py,sz,sz*0.6,Math.random()*Math.PI,0,Math.PI*2); x.fill();
+    }
+    // Fine grass blades
+    x.strokeStyle='rgba(30,80,25,0.4)'; x.lineWidth=1;
+    for(let i=0;i<600;i++){
+        const bx=Math.random()*512, by=Math.random()*512;
+        x.beginPath(); x.moveTo(bx,by); x.lineTo(bx+Math.random()*3-1.5,by-3-Math.random()*5); x.stroke();
+    }
+    // Subtle moss spots
+    for(let i=0;i<30;i++){
+        const px=Math.random()*512, py=Math.random()*512;
+        x.fillStyle=`rgba(25,${70+Math.random()*30},20,0.3)`;
+        x.beginPath(); x.arc(px,py,5+Math.random()*12,0,Math.PI*2); x.fill();
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS=tex.wrapT=THREE.RepeatWrapping; tex.repeat.set(10,10);
+    return tex;
+}
+
+// --- Satellite orbital position ---
+function getSatPosition(sat, t) {
+    const phase = sat.phase0 + t * sat.speed;
+    const cp=Math.cos(phase), sp=Math.sin(phase);
+    // orbit in XY plane, then tilt and rotate
+    let px=sat.radius*cp, py=sat.radius*sp, pz=0;
+    // tilt around X axis
+    const ct=Math.cos(sat.tilt), st=Math.sin(sat.tilt);
+    let y2=py*ct-pz*st, z2=py*st+pz*ct; py=y2; pz=z2;
+    // RAAN around Y axis
+    const cr=Math.cos(sat.raan), sr=Math.sin(sat.raan);
+    let x2=px*cr+pz*sr, z3=-px*sr+pz*cr; px=x2; pz=z3;
+    return new THREE.Vector3(px, py-EARTH_RADIUS, pz);
+}
+
+// --- Three.js renderer ---
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+renderer.domElement.style.position='fixed';
+renderer.domElement.style.inset='0';
+renderer.domElement.style.zIndex='0';
+renderer.domElement.style.pointerEvents='none';
+document.body.appendChild(renderer.domElement);
+
+// VR button
+const vrBtn = VRButton.createButton(renderer);
+vrBtn.style.position='absolute'; vrBtn.style.bottom='40px'; vrBtn.style.right='40px'; vrBtn.style.zIndex='1000';
+document.body.appendChild(vrBtn);
+
+// --- Scene ---
+const scene3 = new THREE.Scene();
+scene3.background = new THREE.Color(0x020208);
+
+// --- Camera ---
+const cam3 = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 2000);
+const cameraRig = new THREE.Group();
+cameraRig.add(cam3);
+cam3.position.set(0, CAM_HEIGHT, 0);
+scene3.add(cameraRig);
+
+// --- Camera look state ---
+let camYaw=0, camPitch=Math.PI*0.25; // start looking up at 45°
+let isDragging3D=false, lastMX=0, lastMY=0;
+function updateCamLook(){
+    cam3.rotation.set(0,0,0);
+    cam3.rotateY(camYaw);
+    cam3.rotateX(camPitch);
+}
+updateCamLook();
+
+// --- Lights ---
+scene3.add(new THREE.AmbientLight(0x222244, 1.5));
+const sunLight = new THREE.DirectionalLight(0xffeedd, 2);
+sunLight.position.set(50, 80, 30);
+scene3.add(sunLight);
+
+// --- Earth ---
+const earthGeo = new THREE.SphereGeometry(EARTH_RADIUS, 64, 64);
+const earthMat = new THREE.MeshStandardMaterial({ color:0x1a5c3a, roughness:0.85, metalness:0.05 });
+const earth = new THREE.Mesh(earthGeo, earthMat);
+earth.position.set(0, -EARTH_RADIUS, 0);
+scene3.add(earth);
+
+// Atmospheric glow ring
+const atmosGeo = new THREE.TorusGeometry(EARTH_RADIUS+0.5, 2.5, 16, 128);
+const atmosMat = new THREE.MeshBasicMaterial({ color:0x66aadd, transparent:true, opacity:0.10, side:THREE.DoubleSide, blending:THREE.AdditiveBlending, depthWrite:false });
+const atmosRing = new THREE.Mesh(atmosGeo, atmosMat);
+atmosRing.position.set(0,-EARTH_RADIUS,0);
+atmosRing.rotation.x=Math.PI/2;
+scene3.add(atmosRing);
+
+// --- Ground plane ---
+const groundGeo = new THREE.PlaneGeometry(400, 400);
+const groundMat = new THREE.MeshStandardMaterial({ map:makeGroundTexture(), roughness:1, metalness:0 });
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI/2;
+ground.position.y = 0.01;
+scene3.add(ground);
+
+// --- Ground station model ---
+const gsGroup = new THREE.Group();
+// Platform
+const gsPlatform = new THREE.Mesh(new THREE.CylinderGeometry(2.5,2.5,0.25,16), new THREE.MeshStandardMaterial({color:0x444450,metalness:0.5,roughness:0.6}));
+gsGroup.add(gsPlatform);
+// Pier
+const gsPier = new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.6,1.8,8), new THREE.MeshStandardMaterial({color:0x555566,metalness:0.6}));
+gsPier.position.y=1.0; gsGroup.add(gsPier);
+// Telescope tube
+const gsTube = new THREE.Mesh(new THREE.CylinderGeometry(0.25,0.25,1.2,8), new THREE.MeshStandardMaterial({color:0x222235,metalness:0.7}));
+gsTube.position.set(0,2.2,0); gsTube.rotation.x=-0.4; gsGroup.add(gsTube);
+// Lens (front of tube)
+const gsLens = new THREE.Mesh(new THREE.CircleGeometry(0.25,16), new THREE.MeshBasicMaterial({color:0x00aaff,transparent:true,opacity:0.4}));
+gsLens.position.set(0,2.2+Math.sin(0.4)*0.6,-Math.cos(0.4)*0.6); gsLens.rotation.x=-0.4;
+gsGroup.add(gsLens);
+// Laser emitter (green dot)
+const gsLaser = new THREE.Mesh(new THREE.SphereGeometry(0.08,8,8), new THREE.MeshBasicMaterial({color:0x00ff44}));
+gsLaser.position.set(0.3,2.0,0); gsGroup.add(gsLaser);
+// Indicator lights
+const indG = new THREE.Mesh(new THREE.SphereGeometry(0.04), new THREE.MeshBasicMaterial({color:0x00ff00}));
+indG.position.set(1.2,0.2,0); gsGroup.add(indG);
+const indR = new THREE.Mesh(new THREE.SphereGeometry(0.04), new THREE.MeshBasicMaterial({color:0xff3333}));
+indR.position.set(1.4,0.2,0); gsGroup.add(indR);
+gsGroup.position.set(0,0.12,0);
+scene3.add(gsGroup);
+
+// --- Enhanced star field ---
+const STAR_COUNT = 6000;
+const starPositions = new Float32Array(STAR_COUNT*3);
+const starSizes = new Float32Array(STAR_COUNT);
+const starAlphas = new Float32Array(STAR_COUNT);
+for(let i=0;i<STAR_COUNT;i++){
+    // Distribute on sphere shell
+    const theta = Math.random()*Math.PI*2;
+    const phi = Math.acos(2*Math.random()-1);
+    const r = 500+Math.random()*100;
+    starPositions[i*3]   = r*Math.sin(phi)*Math.cos(theta);
+    starPositions[i*3+1] = r*Math.sin(phi)*Math.sin(theta);
+    starPositions[i*3+2] = r*Math.cos(phi);
+    // Only show stars above ground (y > -50)
+    if(starPositions[i*3+1] < -100) starPositions[i*3+1] = Math.abs(starPositions[i*3+1]);
+    starSizes[i] = 0.5 + Math.random()*2.5;
+    starAlphas[i] = 0.3 + Math.random()*0.7;
+}
+const starGeo3 = new THREE.BufferGeometry();
+starGeo3.setAttribute('position', new THREE.Float32BufferAttribute(starPositions,3));
+starGeo3.setAttribute('size', new THREE.Float32BufferAttribute(starSizes,1));
+const starMat3 = new THREE.PointsMaterial({ color:0xffffff, size:1.5, sizeAttenuation:false, transparent:true, opacity:0.7, blending:THREE.AdditiveBlending, depthWrite:false });
+const stars3 = new THREE.Points(starGeo3, starMat3);
+scene3.add(stars3);
+
+// Milky Way band — extra stars concentrated in a band
+const MW_COUNT = 3000;
+const mwPos = new Float32Array(MW_COUNT*3);
+for(let i=0;i<MW_COUNT;i++){
+    const theta = Math.random()*Math.PI*2;
+    const phi = Math.PI/2 + (Math.random()-0.5)*0.3; // narrow band
+    const r = 480+Math.random()*80;
+    mwPos[i*3]   = r*Math.sin(phi)*Math.cos(theta);
+    mwPos[i*3+1] = r*Math.sin(phi)*Math.sin(theta);
+    mwPos[i*3+2] = r*Math.cos(phi);
+    if(mwPos[i*3+1] < -50) mwPos[i*3+1] = Math.abs(mwPos[i*3+1]);
+}
+const mwGeo = new THREE.BufferGeometry();
+mwGeo.setAttribute('position', new THREE.Float32BufferAttribute(mwPos,3));
+const mwMat = new THREE.PointsMaterial({color:0x8899bb,size:0.8,sizeAttenuation:false,transparent:true,opacity:0.25,blending:THREE.AdditiveBlending,depthWrite:false});
+scene3.add(new THREE.Points(mwGeo, mwMat));
+
+// --- Satellite point sprites ---
+const satGlowTex = makeGlowTexture(255,255,255);
+const satellites = [];  // runtime satellite objects
+
+SAT_DATA.forEach(sd => {
+    const spriteMat = new THREE.SpriteMaterial({
+        map: satGlowTex,
+        color: new THREE.Color(sd.col[0],sd.col[1],sd.col[2]),
+        blending: THREE.AdditiveBlending,
+        transparent: true,
+        opacity: 0.9,
+        depthWrite: false
+    });
+    const sprite = new THREE.Sprite(spriteMat);
+    sprite.scale.set(2.8,2.8,1);
+    scene3.add(sprite);
+
+    // Invisible hit sphere for raycasting (generous size for easy clicking)
+    const hitGeo = new THREE.SphereGeometry(6, 8, 8);
+    const hitMat = new THREE.MeshBasicMaterial({ visible:false });
+    const hitSphere = new THREE.Mesh(hitGeo, hitMat);
+    scene3.add(hitSphere);
+
+    // Label sprite
+    const labelCanvas = document.createElement('canvas');
+    labelCanvas.width=512; labelCanvas.height=64;
+    const lctx=labelCanvas.getContext('2d');
+    lctx.font='bold 28px monospace'; lctx.fillStyle='#00e0ff';
+    lctx.fillText(sd.name, 8, 38);
+    const labelTex = new THREE.CanvasTexture(labelCanvas);
+    const labelMat = new THREE.SpriteMaterial({map:labelTex,transparent:true,opacity:0,depthWrite:false});
+    const label = new THREE.Sprite(labelMat);
+    label.scale.set(12,1.5,1);
+    scene3.add(label);
+
+    // Orbit trail
+    const orbitPts=[];
+    for(let i=0;i<=200;i++){
+        const tmpSat = {...sd, phase0: (i/200)*Math.PI*2};
+        const p = getSatPosition(tmpSat, 0);
+        // Only include points above ground
+        orbitPts.push(p);
+    }
+    const orbitGeo = new THREE.BufferGeometry().setFromPoints(orbitPts);
+    const orbitLine = new THREE.Line(orbitGeo, new THREE.LineBasicMaterial({color:0x1a2a44,transparent:true,opacity:0.15,blending:THREE.AdditiveBlending,depthWrite:false}));
+    scene3.add(orbitLine);
+
+    satellites.push({
+        data: sd,
+        sprite: sprite,
+        hitSphere: hitSphere,
+        label: label,
+        orbitLine: orbitLine,
+        worldPos: new THREE.Vector3()
+    });
+});
+
+// --- Detail satellite model (shared, shown during camera ride) ---
+const detailSatGroup = new THREE.Group();
+// Bus
+const dBus = new THREE.Mesh(new THREE.BoxGeometry(2,1.2,2), new THREE.MeshStandardMaterial({color:0xccaa44,metalness:0.5,roughness:0.4}));
+detailSatGroup.add(dBus);
+// Solar panels
+const dPanGeo = new THREE.BoxGeometry(5.5,0.05,1.8);
+const dPanMat = new THREE.MeshStandardMaterial({color:0x112244,metalness:0.8,roughness:0.2});
+const dPanL = new THREE.Mesh(dPanGeo,dPanMat); dPanL.position.x=-3.8; detailSatGroup.add(dPanL);
+const dPanR = new THREE.Mesh(dPanGeo,dPanMat); dPanR.position.x=3.8; detailSatGroup.add(dPanR);
+// Panel grid lines
+const dPanWireL = new THREE.LineSegments(new THREE.EdgesGeometry(dPanGeo), new THREE.LineBasicMaterial({color:0x2244aa,transparent:true,opacity:0.5}));
+dPanWireL.position.copy(dPanL.position); detailSatGroup.add(dPanWireL);
+const dPanWireR = new THREE.LineSegments(new THREE.EdgesGeometry(dPanGeo), new THREE.LineBasicMaterial({color:0x2244aa,transparent:true,opacity:0.5}));
+dPanWireR.position.copy(dPanR.position); detailSatGroup.add(dPanWireR);
+// Antenna dish
+const dDish = new THREE.Mesh(new THREE.ConeGeometry(0.5,0.35,16,1,true), new THREE.MeshStandardMaterial({color:0x999999,metalness:0.6,side:THREE.DoubleSide}));
+dDish.position.set(0.7,0.9,0); dDish.rotation.x=Math.PI; detailSatGroup.add(dDish);
+// Antenna mast
+const dMast = new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.6), new THREE.MeshStandardMaterial({color:0x888888}));
+dMast.position.set(0.7,0.6,0); detailSatGroup.add(dMast);
+// Optical receiver (target for laser)
+const dRecvGlow = new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.35,0.12,16), new THREE.MeshBasicMaterial({color:0x00ff44,transparent:true,opacity:0.0}));
+dRecvGlow.position.set(0,-0.7,0.8); dRecvGlow.rotation.x=Math.PI/4; detailSatGroup.add(dRecvGlow);
+const dRecv = new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.28,0.1,16), new THREE.MeshStandardMaterial({color:0x003311,metalness:0.8}));
+dRecv.position.copy(dRecvGlow.position); dRecv.rotation.copy(dRecvGlow.rotation); detailSatGroup.add(dRecv);
+
+detailSatGroup.visible = false;
+scene3.add(detailSatGroup);
+
+// --- Laser beam system ---
+let beamMesh = null;
+const BEAM_PARTICLE_COUNT = 40;
+const beamParticles = [];
+const beamParticleGlowTex = makeGlowTexture(50,255,100);
+for(let i=0;i<BEAM_PARTICLE_COUNT;i++){
+    const pMat = new THREE.SpriteMaterial({map:beamParticleGlowTex,color:0x44ff88,blending:THREE.AdditiveBlending,transparent:true,opacity:0,depthWrite:false});
+    const ps = new THREE.Sprite(pMat);
+    ps.scale.set(0.6,0.6,1);
+    ps.visible=false;
+    scene3.add(ps);
+    beamParticles.push({ mesh:ps, t: i/BEAM_PARTICLE_COUNT, speed:0.25+Math.random()*0.15 });
+}
+
+// Atmospheric scatter cone at beam base
+const scatterGeo = new THREE.ConeGeometry(1.5, 8, 16, 1, true);
+const scatterMat = new THREE.MeshBasicMaterial({color:0x22ff66, transparent:true, opacity:0, side:THREE.DoubleSide, blending:THREE.AdditiveBlending, depthWrite:false});
+const scatterCone = new THREE.Mesh(scatterGeo, scatterMat);
+scatterCone.visible=false;
+scene3.add(scatterCone);
+
+// --- Arrival flash ---
+const flashGeo = new THREE.SphereGeometry(4,16,16);
+const flashMat = new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false});
+const flashMesh = new THREE.Mesh(flashGeo, flashMat);
+flashMesh.visible=false;
+scene3.add(flashMesh);
+
+// --- State machine ---
+let viewState = 'dashboard'; // dashboard | immersive
+let targetState = 'idle';    // idle | locked | firing | arriving | returning
+let targetedSat = null;
+let msgType = 'beacon';
+let fireTime = 0;
+let fireDuration = 3.5;
+let arriveDuration = 2.0;
+let returnDuration = 2.5;
+let groundCamPos = new THREE.Vector3(0, CAM_HEIGHT, 0);
+let groundCamYaw = 0, groundCamPitch = Math.PI*0.25;
+let rideCamStart = new THREE.Vector3();
+let rideCamEnd = new THREE.Vector3();
+let clock3 = new THREE.Clock();
+
+// --- Raycaster ---
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2(0,0); // center of screen
+
+// --- 3D View toggle ---
+const overlay = document.getElementById('vr-overlay');
+const btn3D = document.getElementById('btn-3d-view');
+const btnExit3D = document.getElementById('btn-exit-3d');
+const satInfoCard = document.getElementById('sat-info');
+const msgPanel = document.getElementById('msg-panel');
+const btnFire = document.getElementById('btn-fire');
+const linkStatus = document.getElementById('link-status');
+const reticleEl = document.getElementById('vr-reticle');
+
+function enter3DView(){
+    viewState='immersive';
+    renderer.domElement.style.zIndex='500';
+    renderer.domElement.style.pointerEvents='auto';
+    overlay.classList.add('active');
+    document.querySelectorAll('.fw').forEach(w=>w.style.display='none');
+    document.querySelector('.cam-wrap').style.display='none';
+    log('ok','Entered 3D Optical Link View');
+}
+
+function exit3DView(){
+    viewState='dashboard';
+    targetState='idle'; targetedSat=null;
+    renderer.domElement.style.zIndex='0';
+    renderer.domElement.style.pointerEvents='none';
+    overlay.classList.remove('active');
+    satInfoCard.style.display='none';
+    msgPanel.style.display='none';
+    btnFire.style.display='none';
+    linkStatus.style.display='none';
+    reticleEl.classList.remove('reticle-locked');
+    cleanupBeam();
+    document.querySelectorAll('.fw').forEach(w=>w.style.display='flex');
+    document.querySelector('.cam-wrap').style.display='block';
+    log('i','Exited 3D view');
+}
+
+btn3D.addEventListener('click', enter3DView);
+btnExit3D.addEventListener('click', exit3DView);
+document.addEventListener('keydown', e=>{ if(e.key==='Escape' && viewState==='immersive') exit3DView(); });
+
+// --- Mouse look ---
+let dragTotal=0;
+renderer.domElement.addEventListener('mousedown', e=>{
+    if(viewState!=='immersive' || targetState==='firing' || targetState==='arriving' || targetState==='returning') return;
+    if(e.button===0){ isDragging3D=true; dragTotal=0; lastMX=e.clientX; lastMY=e.clientY; }
+});
+renderer.domElement.addEventListener('mousemove', e=>{
+    // Hover highlighting — always run in immersive mode
+    if(viewState==='immersive' && targetState!=='firing' && targetState!=='arriving' && targetState!=='returning'){
+        const rect = renderer.domElement.getBoundingClientRect();
+        const mx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        const my = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(new THREE.Vector2(mx, my), cam3);
+        const hitMeshes = satellites.map(s=>s.hitSphere);
+        const intersects = raycaster.intersectObjects(hitMeshes);
+        // Reset all highlights
+        satellites.forEach(s=>{
+            if(s !== targetedSat){ s.sprite.scale.set(2.8,2.8,1); s.label.material.opacity = 0; }
+        });
+        if(intersects.length > 0){
+            const hitIdx = hitMeshes.indexOf(intersects[0].object);
+            if(hitIdx>=0){
+                const hSat = satellites[hitIdx];
+                hSat.sprite.scale.set(3.5,3.5,1); // bigger glow on hover
+                hSat.label.material.opacity = 0.8;
+                hSat.label.visible = true;
+                renderer.domElement.style.cursor='pointer';
+            }
+        } else {
+            renderer.domElement.style.cursor = isDragging3D ? 'grabbing' : 'default';
+        }
+    }
+    if(!isDragging3D) return;
+    const dx=e.clientX-lastMX, dy=e.clientY-lastMY;
+    dragTotal += Math.abs(dx)+Math.abs(dy);
+    camYaw -= dx*0.003;
+    camPitch -= dy*0.003;
+    camPitch = Math.max(-0.1, Math.min(Math.PI/2, camPitch));
+    updateCamLook();
+    lastMX=e.clientX; lastMY=e.clientY;
+});
+window.addEventListener('mouseup', ()=>{ isDragging3D=false; });
+
+// --- Click to target satellite ---
+renderer.domElement.addEventListener('click', e=>{
+    if(viewState!=='immersive') return;
+    if(dragTotal > 5) return; // was a drag, not a click
+    if(targetState==='firing'||targetState==='arriving'||targetState==='returning') return;
+
+    // Raycast from actual mouse position
+    const rect = renderer.domElement.getBoundingClientRect();
+    const mx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    const my = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(new THREE.Vector2(mx, my), cam3);
+    const hitMeshes = satellites.map(s=>s.hitSphere);
+    const intersects = raycaster.intersectObjects(hitMeshes);
+
+    if(intersects.length > 0){
+        const hitIdx = hitMeshes.indexOf(intersects[0].object);
+        if(hitIdx>=0){
+            targetedSat = satellites[hitIdx];
+            targetState = 'locked';
+            reticleEl.classList.add('reticle-locked');
+            satInfoCard.style.display='block';
+            msgPanel.style.display='flex';
+            btnFire.style.display='block';
+            linkStatus.style.display='none';
+            document.getElementById('sat-name').innerText = targetedSat.data.name;
+            document.getElementById('si-id').innerText = '#'+targetedSat.data.id;
+            log('ok', 'Target locked: '+targetedSat.data.name);
+        }
+    } else {
+        // Click empty space = deselect
+        if(targetState==='locked'){
+            targetedSat=null; targetState='idle';
+            reticleEl.classList.remove('reticle-locked');
+            satInfoCard.style.display='none';
+            msgPanel.style.display='none';
+            btnFire.style.display='none';
+        }
+    }
+});
+
+// --- Message type buttons ---
+document.querySelectorAll('.msg-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+        document.querySelectorAll('.msg-btn').forEach(b=>b.classList.remove('active'));
+        btn.classList.add('active');
+        msgType = btn.dataset.type;
+    });
+});
+
+// --- Fire signal ---
+btnFire.addEventListener('click', ()=>{
+    if(targetState!=='locked' || !targetedSat) return;
+    targetState='firing';
+    fireTime=0;
+    // Set durations based on message type
+    if(msgType==='beacon'){ fireDuration=2.5; arriveDuration=1.5; returnDuration=2.0; }
+    else if(msgType==='data'){ fireDuration=4.0; arriveDuration=2.0; returnDuration=2.5; }
+    else { fireDuration=3.0; arriveDuration=2.5; returnDuration=2.5; }
+
+    // Store ground camera state
+    groundCamYaw=camYaw; groundCamPitch=camPitch;
+    rideCamStart.copy(cam3.position);
+    // End position: 5 units from satellite
+    const satPos = targetedSat.worldPos.clone();
+    const dir = satPos.clone().sub(rideCamStart).normalize();
+    rideCamEnd.copy(satPos).sub(dir.multiplyScalar(5));
+
+    // Create beam
+    createBeam(rideCamStart.clone().setY(2), satPos);
+
+    // Hide UI during ride
+    msgPanel.style.display='none';
+    btnFire.style.display='none';
+    document.getElementById('vr-instructions').style.display='none';
+    log('ok','Firing '+msgType.toUpperCase()+' optical signal to '+targetedSat.data.name);
+});
+
+function createBeam(start, end) {
+    if(beamMesh) scene3.remove(beamMesh);
+    const dir = new THREE.Vector3().subVectors(end,start);
+    const len = dir.length();
+    const bGeo = new THREE.CylinderGeometry(0.03, 0.25, len, 8, 1, true);
+    const bMat = new THREE.MeshBasicMaterial({color:0x00ff44,transparent:true,opacity:0.5,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false});
+    beamMesh = new THREE.Mesh(bGeo, bMat);
+    // Position at midpoint
+    beamMesh.position.copy(start).lerp(end, 0.5);
+    // Orient
+    const up = new THREE.Vector3(0,1,0);
+    const q = new THREE.Quaternion().setFromUnitVectors(up, dir.normalize());
+    beamMesh.quaternion.copy(q);
+    scene3.add(beamMesh);
+
+    // Scatter cone at base
+    scatterCone.position.copy(start);
+    scatterCone.position.y+=4;
+    scatterCone.visible=true;
+    scatterMat.opacity=0.06;
+
+    // Activate particles
+    beamParticles.forEach((p,i)=>{
+        p.t = i/BEAM_PARTICLE_COUNT;
+        p.mesh.visible=true;
+        p.mesh.material.opacity=0.8;
+    });
+}
+
+function cleanupBeam(){
+    if(beamMesh){ scene3.remove(beamMesh); beamMesh=null; }
+    scatterCone.visible=false;
+    beamParticles.forEach(p=>{ p.mesh.visible=false; p.mesh.material.opacity=0; });
+    flashMesh.visible=false;
+    detailSatGroup.visible=false;
+}
+
+// --- Easing ---
+function easeInOutCubic(t){ return t<0.5? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; }
+
+// --- Animation loop ---
+const tempVec = new THREE.Vector3();
+let t3 = 0;
+
+renderer.setAnimationLoop(() => {
+    const dt = clock3.getDelta();
+    t3 += dt;
+
+    // Update satellite positions
+    satellites.forEach(sat => {
+        sat.worldPos.copy(getSatPosition(sat.data, t3));
+        sat.sprite.position.copy(sat.worldPos);
+        sat.hitSphere.position.copy(sat.worldPos);
+        // Label offset
+        sat.label.position.copy(sat.worldPos);
+        sat.label.position.y += 2.5;
+
+        // Check if above horizon (y > 0)
+        const aboveHorizon = sat.worldPos.y > -2;
+        sat.sprite.visible = aboveHorizon;
+        sat.hitSphere.visible = aboveHorizon;
+
+        // Pulsing brightness
+        const pulse = 0.7 + 0.3*Math.sin(t3*2 + sat.data.phase0*10);
+        sat.sprite.material.opacity = aboveHorizon ? pulse : 0;
+
+        // Label visibility: show only for targeted sat
+        if(targetedSat === sat && targetState==='locked'){
+            sat.label.material.opacity = Math.min(1, sat.label.material.opacity + dt*3);
+        } else {
+            sat.label.material.opacity = Math.max(0, sat.label.material.opacity - dt*3);
+        }
+        sat.label.visible = sat.label.material.opacity > 0.01;
+
+        // Update info card if this is the target
+        if(targetedSat === sat && satInfoCard.style.display !== 'none'){
+            const altitude = (sat.data.radius - EARTH_RADIUS)*6.371; // scale to ~km
+            const range = cam3.position.distanceTo(sat.worldPos)*6.371;
+            const elev = Math.atan2(sat.worldPos.y, Math.sqrt(sat.worldPos.x**2+sat.worldPos.z**2));
+            const azi2 = Math.atan2(sat.worldPos.x, sat.worldPos.z);
+            document.getElementById('si-alt').innerText = altitude.toFixed(0)+' km';
+            document.getElementById('si-range').innerText = range.toFixed(0)+' km';
+            document.getElementById('si-angvel').innerText = (sat.data.speed*57.3).toFixed(2)+'°/s';
+            document.getElementById('si-elev').innerText = (elev*57.3).toFixed(1)+'°';
+            document.getElementById('si-azi').innerText = (azi2*57.3).toFixed(1)+'°';
+        }
+    });
+
+    // --- State machine ---
+    if(targetState === 'firing' && targetedSat){
+        fireTime += dt;
+        const progress = Math.min(1, fireTime / fireDuration);
+        const easedT = easeInOutCubic(progress);
+
+        // Camera ride along beam
+        cam3.position.lerpVectors(rideCamStart, rideCamEnd, easedT);
+        cam3.lookAt(targetedSat.worldPos);
+
+        // Update beam particles
+        const beamStart = rideCamStart.clone().setY(2);
+        const beamEnd = targetedSat.worldPos;
+        beamParticles.forEach(p => {
+            p.t += p.speed * dt;
+            if(p.t > 1) p.t -= 1;
+
+            // Data burst: modulate visibility
+            let particleOpacity = 0.8;
+            if(msgType==='data'){
+                const cluster = Math.sin(p.t*Math.PI*8 + t3*5);
+                particleOpacity = cluster > 0 ? 0.9 : 0.15;
+            }
+
+            p.mesh.position.lerpVectors(beamStart, beamEnd, p.t);
+            // Atmospheric wobble near ground
+            const wobbleAmt = (1-p.t)*0.4;
+            p.mesh.position.x += Math.sin(t3*12+p.t*30)*wobbleAmt;
+            p.mesh.position.z += Math.cos(t3*12+p.t*30)*wobbleAmt;
+            const pSize = 0.3 + (1-p.t)*0.6;
+            p.mesh.scale.set(pSize,pSize,1);
+            p.mesh.material.opacity = particleOpacity;
+        });
+
+        // Beam scintillation
+        if(beamMesh){
+            beamMesh.material.opacity = 0.35 + Math.sin(t3*15)*0.15;
+        }
+        scatterMat.opacity = 0.04 + Math.sin(t3*8)*0.02;
+
+        // Detail satellite: show and position as we approach
+        const distToSat = cam3.position.distanceTo(targetedSat.worldPos);
+        if(distToSat < 40){
+            detailSatGroup.visible = true;
+            detailSatGroup.position.copy(targetedSat.worldPos);
+            detailSatGroup.rotation.y = t3 * 0.3;
+            // Scale based on distance
+            const s = Math.max(0.1, Math.min(1, (40-distToSat)/30));
+            detailSatGroup.scale.set(s,s,s);
+            // Hide the sprite to avoid overlap
+            targetedSat.sprite.visible = distToSat > 15;
+        }
+
+        // Receiver glow intensifies as beam approaches
+        dRecvGlow.material.opacity = easedT * 0.8;
+        dRecvGlow.material.color.setHSL(0.35, 1, 0.5 + Math.sin(t3*20)*0.2);
+
+        if(progress >= 1){
+            // Arrived!
+            targetState = 'arriving';
+            fireTime = 0;
+            // Flash
+            flashMesh.position.copy(targetedSat.worldPos);
+            flashMesh.visible = true;
+            flashMat.opacity = 1.0;
+            // Show link status
+            linkStatus.style.display = 'block';
+            const ber = (Math.random()*9+0.1).toFixed(1);
+            const snr = (20+Math.random()*10).toFixed(1);
+            const margin = (3+Math.random()*5).toFixed(1);
+            document.getElementById('link-metrics').innerText =
+                'BER: '+ber+'×10⁻⁹ · SNR: '+snr+' dB · Margin: +'+margin+' dB';
+            log('ok','LINK ESTABLISHED with '+targetedSat.data.name+' — SNR: '+snr+'dB');
+        }
+    }
+
+    if(targetState === 'arriving'){
+        fireTime += dt;
+        // Flash fades
+        flashMat.opacity = Math.max(0, 1 - fireTime/0.8);
+        if(fireTime > 0.8) flashMesh.visible = false;
+
+        // Keep looking at satellite, gentle rotation
+        cam3.lookAt(targetedSat.worldPos);
+        detailSatGroup.rotation.y = t3*0.3;
+
+        // Handshake: show return beam particles in reverse (orange)
+        if(msgType==='handshake' && fireTime > 1.0){
+            beamParticles.forEach(p => {
+                p.t -= p.speed * dt * 0.7;
+                if(p.t < 0) p.t += 1;
+                const beamStart2 = rideCamStart.clone().setY(2);
+                p.mesh.position.lerpVectors(beamStart2, targetedSat.worldPos, p.t);
+                p.mesh.material.color.setHex(0xff8844); // orange return beam
+            });
+        }
+
+        if(fireTime >= arriveDuration){
+            targetState = 'returning';
+            fireTime = 0;
+            linkStatus.style.display = 'none';
+        }
+    }
+
+    if(targetState === 'returning'){
+        fireTime += dt;
+        const progress = Math.min(1, fireTime / returnDuration);
+        const easedT = easeInOutCubic(progress);
+
+        // Camera returns to ground
+        cam3.position.lerpVectors(rideCamEnd, groundCamPos, easedT);
+
+        // Gradually restore free look
+        if(progress > 0.7){
+            const lookT = (progress-0.7)/0.3;
+            // Blend between lookAt satellite and free look
+            const tmpQ = cam3.quaternion.clone();
+            updateCamLook(); // sets rotation based on yaw/pitch
+            const freeQ = cam3.quaternion.clone();
+            cam3.quaternion.copy(tmpQ).slerp(freeQ, lookT);
+        } else {
+            cam3.lookAt(targetedSat.worldPos);
+        }
+
+        // Fade beam
+        if(beamMesh) beamMesh.material.opacity = 0.5*(1-easedT);
+        scatterMat.opacity = 0.06*(1-easedT);
+        beamParticles.forEach(p => {
+            p.mesh.material.opacity = 0.8*(1-easedT);
+            // Reset color
+            p.mesh.material.color.setHex(0x44ff88);
+        });
+
+        // Hide detail satellite
+        detailSatGroup.visible = easedT < 0.5;
+        if(targetedSat) targetedSat.sprite.visible = true;
+
+        if(progress >= 1){
+            targetState = 'idle';
+            cleanupBeam();
+            // Restore camera
+            cam3.position.copy(groundCamPos);
+            camYaw = groundCamYaw;
+            camPitch = groundCamPitch;
+            updateCamLook();
+            // Restore UI
+            targetedSat = null;
+            reticleEl.classList.remove('reticle-locked');
+            satInfoCard.style.display='none';
+            msgPanel.style.display='none';
+            btnFire.style.display='none';
+            document.getElementById('vr-instructions').style.display='block';
+        }
+    }
+
+    // Ground station indicator light blink
+    indG.material.color.setHex(Math.sin(t3*4)>0 ? 0x00ff00 : 0x003300);
+    indR.material.color.setHex(targetState==='firing' ? 0xff3333 : 0x330000);
+
+    // Laser emitter glow when firing
+    gsLaser.material.color.setHex(targetState==='firing' ? 0x00ff44 : 0x004400);
+    gsLaser.scale.setScalar(targetState==='firing' ? 1+Math.sin(t3*30)*0.3 : 0.6);
+
+    // Atmosphere ring subtle animation
+    atmosMat.opacity = 0.06 + Math.sin(t3*0.5)*0.02;
+
+    renderer.render(scene3, cam3);
+});
+
+// --- Resize ---
+window.addEventListener('resize', () => {
+    cam3.aspect = window.innerWidth/window.innerHeight;
+    cam3.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// UTC
+setInterval(()=>{document.getElementById('bb-utc').innerText=new Date().toISOString().substring(11,19)+' UTC';},1000);
+
+// End time
+document.getElementById('end-time').innerText=new Date(Date.now()+300000).toISOString().substring(11,19);
+</script>
+</body>
+</html>
