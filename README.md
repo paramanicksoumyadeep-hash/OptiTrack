@@ -4,7 +4,7 @@ OptiTrack (based on pypogs) is an interactive, web-based Portable Optical Ground
 
 ##  Live Demo
 
-[**Try the Live Demo Here**](https://paramanicksoumyadeep-hash.github.io/OptiTrack/)
+[**Try the Live Demo Here**](https://opti-track-ten.vercel.app/)
 
 *(Note: Ensure GitHub Pages is enabled in your repository settings on the `main` branch or `gh-pages` branch to make this link active.)*
 
